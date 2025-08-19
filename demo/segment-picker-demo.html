@@ -1,0 +1,317 @@
+<!doctype html>
+<!--
+ * Copyright (C) 2019-2024 Yahweasel and contributors
+ *
+ * Permission to use, copy, modify, and/or distribute this software for any
+ * purpose with or without fee is hereby granted.
+ *
+ * THE SOFTWARE IS PROVIDED "AS IS" AND THE AUTHOR DISCLAIMS ALL WARRANTIES
+ * WITH REGARD TO THIS SOFTWARE INCLUDING ALL IMPLIED WARRANTIES OF
+ * MERCHANTABILITY AND FITNESS. IN NO EVENT SHALL THE AUTHOR BE LIABLE FOR ANY
+ * SPECIAL, DIRECT, INDIRECT, OR CONSEQUENTIAL DAMAGES OR ANY DAMAGES
+ * WHATSOEVER RESULTING FROM LOSS OF USE, DATA OR PROFITS, WHETHER IN AN ACTION
+ * OF CONTRACT, NEGLIGENCE OR OTHER TORTIOUS ACTION, ARISING OUT OF OR IN
+ * CONNECTION WITH THE USE OR PERFORMANCE OF THIS SOFTWARE.
+-->
+<html>
+    <head>
+        <meta charset="utf-8" />
+        <title>LibAV.JS audio segment picker demo</title>
+        <style>
+            canvas { display: block; margin: 1em 0; border: 1px solid black; }
+        </style>
+    </head>
+    <body>
+        <script type="text/javascript">(async function() {
+            try {
+                const dce = document.createElement.bind(document);
+                const main = dce("div");
+                document.body.appendChild(main);
+
+                const variant = await new Promise(res => {
+                    const label = dce("label");
+                    label.innerHTML = "Variant:&nbsp;";
+                    label.htmlFor = "variant";
+                    main.appendChild(label);
+                    const vbox = dce("input");
+                    vbox.type = "text";
+                    vbox.id = "variant";
+                    vbox.value = "webm";
+                    main.appendChild(vbox);
+                    const ok = dce("button");
+                    ok.innerHTML = "Load";
+                    main.appendChild(ok);
+
+                    vbox.focus();
+                    vbox.select();
+
+                    vbox.onkeypress = ev => {
+                        if (ev.key === "Enter")
+                            res(vbox.value);
+                    };
+                    ok.onclick = () => res(vbox.value);
+                });
+                main.innerHTML = "Loading...";
+
+                LibAV = {base: "../dist"};
+                await new Promise(res => {
+                    const scr = dce("script");
+                    scr.src = `../dist/libav-${variant}.js?${Math.random()}`;
+                    scr.onload = res;
+                    scr.onerror = () => alert("Failed to load variant!");
+                    document.body.appendChild(scr);
+                });
+                const libav = await LibAV.LibAV();
+
+                // Load the audio file
+                const file = await new Promise(res => {
+                    main.innerHTML = "";
+                    const label = dce("label");
+                    label.innerHTML = "File:&nbsp;";
+                    label.htmlFor = "load-file";
+                    main.appendChild(label);
+                    const picker = dce("input");
+                    picker.type = "file";
+                    picker.id = "load-file";
+                    picker.accept = "audio/*";
+                    main.appendChild(picker);
+                    picker.focus();
+                    picker.onchange = () => {
+                        if (picker.files.length > 0)
+                            res(picker.files[0]);
+                    };
+                });
+                main.innerHTML = "Preparing...";
+
+                const arrayBuf = await file.arrayBuffer();
+                const audioCtx = new AudioContext();
+                const buffer = await audioCtx.decodeAudioData(arrayBuf);
+
+                main.innerHTML = "";
+
+                const audio = dce("audio");
+                audio.controls = true;
+                audio.src = URL.createObjectURL(file);
+                main.appendChild(audio);
+
+                const canvas = dce("canvas");
+                canvas.width = 800;
+                canvas.height = 200;
+                main.appendChild(canvas);
+
+                const exportFmtLabel = dce("label");
+                exportFmtLabel.innerHTML = "Format:&nbsp;";
+                exportFmtLabel.htmlFor = "format";
+                main.appendChild(exportFmtLabel);
+                const formatSel = dce("select");
+                formatSel.id = "format";
+                ["wav", "ogg"].forEach(f => {
+                    const opt = dce("option");
+                    opt.value = f;
+                    opt.innerHTML = f;
+                    formatSel.appendChild(opt);
+                });
+                main.appendChild(formatSel);
+
+                const markBtn = dce("button");
+                markBtn.innerHTML = "Mark";
+                main.appendChild(markBtn);
+
+                const exportBtn = dce("button");
+                exportBtn.innerHTML = "Export";
+                main.appendChild(exportBtn);
+
+                const outCanvas = dce("canvas");
+                outCanvas.width = 800;
+                outCanvas.height = 200;
+                main.appendChild(outCanvas);
+
+                const outAudio = dce("audio");
+                outAudio.controls = true;
+                main.appendChild(outAudio);
+
+                // Cut positions
+                const cuts = [];
+                function redraw() {
+                    drawWaveform(canvas, buffer);
+                    const ctx = canvas.getContext("2d");
+                    ctx.strokeStyle = "red";
+                    for (const cut of cuts) {
+                        const x = cut / buffer.duration * canvas.width;
+                        ctx.beginPath();
+                        ctx.moveTo(x, 0);
+                        ctx.lineTo(x, canvas.height);
+                        ctx.stroke();
+                    }
+                }
+                redraw();
+
+                function addCut(t) {
+                    cuts.push(t);
+                    cuts.sort((a, b) => a - b);
+                    redraw();
+                }
+
+                canvas.onclick = ev => {
+                    const rect = canvas.getBoundingClientRect();
+                    const x = ev.clientX - rect.left;
+                    const t = x / canvas.width * buffer.duration;
+                    addCut(t);
+                };
+
+                markBtn.onclick = () => addCut(audio.currentTime);
+
+                exportBtn.onclick = async () => {
+                    if (cuts.length % 2 === 1) {
+                        alert("Need an even number of cuts.");
+                        return;
+                    }
+
+                    // Construct output buffer
+                    const sr = buffer.sampleRate;
+                    const chs = buffer.numberOfChannels;
+                    let length = 0;
+                    for (let i = 0; i < cuts.length; i += 2)
+                        length += Math.floor((cuts[i+1] - cuts[i]) * sr);
+                    const outBuf = audioCtx.createBuffer(chs, length, sr);
+                    for (let ch = 0; ch < chs; ch++) {
+                        const data = buffer.getChannelData(ch);
+                        const out = outBuf.getChannelData(ch);
+                        let ptr = 0;
+                        for (let i = 0; i < cuts.length; i += 2) {
+                            const s = Math.floor(cuts[i] * sr);
+                            const e = Math.floor(cuts[i+1] * sr);
+                            out.set(data.subarray(s, e), ptr);
+                            ptr += e - s;
+                        }
+                    }
+
+                    // Draw output waveform
+                    drawWaveform(outCanvas, outBuf);
+
+                    // Encode
+                    let blob;
+                    if (formatSel.value === "wav") {
+                        blob = new Blob([encodeWAV(outBuf)], {type: "audio/wav"});
+                    } else {
+                        const data = await encodeOpusOgg(libav, outBuf);
+                        blob = new Blob([data.buffer], {type: "audio/ogg"});
+                    }
+                    outAudio.src = URL.createObjectURL(blob);
+
+                    const link = dce("a");
+                    link.href = outAudio.src;
+                    link.download = `output.${formatSel.value}`;
+                    link.innerHTML = "Download";
+                    main.appendChild(link);
+                };
+
+                function drawWaveform(canvas, buf) {
+                    const ctx = canvas.getContext("2d");
+                    const {width, height} = canvas;
+                    ctx.clearRect(0, 0, width, height);
+                    ctx.strokeStyle = "black";
+                    ctx.beginPath();
+                    const data = buf.getChannelData(0);
+                    const step = Math.ceil(data.length / width);
+                    for (let i = 0; i < width; i++) {
+                        let min = 1, max = -1;
+                        for (let j = 0; j < step; j++) {
+                            const v = data[i*step + j] || 0;
+                            if (v < min) min = v;
+                            if (v > max) max = v;
+                        }
+                        const y1 = (1 + min) * height / 2;
+                        const y2 = (1 + max) * height / 2;
+                        ctx.moveTo(i, y1);
+                        ctx.lineTo(i, y2);
+                    }
+                    ctx.stroke();
+                }
+
+                function encodeWAV(buf) {
+                    const chs = buf.numberOfChannels;
+                    const sr = buf.sampleRate;
+                    const samples = buf.length;
+                    const out = new DataView(new ArrayBuffer(44 + samples * chs * 2));
+                    let offset = 0;
+                    function w32(v) { out.setUint32(offset, v, true); offset += 4; }
+                    function w16(v) { out.setUint16(offset, v, true); offset += 2; }
+                    w32(0x46464952); // RIFF
+                    w32(36 + samples * chs * 2);
+                    w32(0x45564157); // WAVE
+                    w32(0x20746d66); // fmt
+                    w32(16);
+                    w16(1);
+                    w16(chs);
+                    w32(sr);
+                    w32(sr * chs * 2);
+                    w16(chs * 2);
+                    w16(16);
+                    w32(0x61746164); // data
+                    w32(samples * chs * 2);
+                    const inter = new Int16Array(out.buffer, 44);
+                    let ptr = 0;
+                    const chData = [];
+                    for (let ch = 0; ch < chs; ch++) chData.push(buf.getChannelData(ch));
+                    for (let i = 0; i < samples; i++)
+                        for (let ch = 0; ch < chs; ch++)
+                            inter[ptr++] = Math.max(-1, Math.min(1, chData[ch][i])) * 0x7fff;
+                    return out.buffer;
+                }
+
+                async function encodeOpusOgg(libav, buf) {
+                    const sr = buf.sampleRate;
+                    const chs = buf.numberOfChannels;
+                    const channel_layout = chs === 1 ? 4 : 3;
+                    const [codec, c, frame, pkt, frame_size] =
+                        await libav.ff_init_encoder("libopus", {
+                            ctx: {
+                                bit_rate: 128000,
+                                sample_fmt: libav.AV_SAMPLE_FMT_FLT,
+                                sample_rate: sr,
+                                channel_layout,
+                                channels: chs
+                            },
+                            time_base: [1, sr]
+                        });
+                    const [oc, , pb] = await libav.ff_init_muxer(
+                        {filename: "out.ogg", open: true}, [[c, 1, sr]]);
+                    await libav.avformat_write_header(oc, 0);
+                    const inter = new Float32Array(buf.length * chs);
+                    for (let ch = 0; ch < chs; ch++) {
+                        const data = buf.getChannelData(ch);
+                        for (let i = 0; i < buf.length; i++)
+                            inter[i*chs + ch] = data[i];
+                    }
+                    const frames = [];
+                    let pts = 0;
+                    for (let i = 0; i < buf.length; i += frame_size) {
+                        const end = Math.min(i + frame_size, buf.length);
+                        frames.push({
+                            data: inter.subarray(i*chs, end*chs),
+                            channel_layout,
+                            format: libav.AV_SAMPLE_FMT_FLT,
+                            pts,
+                            sample_rate: sr
+                        });
+                        pts += end - i;
+                    }
+                    const packets = await libav.ff_encode_multi(c, frame, pkt, frames, true);
+                    await libav.ff_write_multi(oc, pkt, packets);
+                    await libav.av_write_trailer(oc);
+                    const data = await libav.readFile("out.ogg");
+                    await libav.unlink("out.ogg");
+                    await libav.ff_free_muxer(oc, pb);
+                    await libav.ff_free_encoder(c, frame, pkt);
+                    return data;
+                }
+
+            } catch (ex) {
+                alert(ex + "");
+            }
+        })();
+        </script>
+    </body>
+</html>
+
