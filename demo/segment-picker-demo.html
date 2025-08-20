@@ -36,7 +36,7 @@
                     const vbox = dce("input");
                     vbox.type = "text";
                     vbox.id = "variant";
-                    vbox.value = "av1-opus";
+                    vbox.value = "default";
                     main.appendChild(vbox);
                     const ok = dce("button");
                     ok.innerHTML = "Load";
@@ -53,11 +53,12 @@
                 });
                 main.innerHTML = "Loading...";
 
-                LibAV = {base: "../dist"};
+                const base = "../libav.js-6.7.7.1.1/dist";
+                LibAV = {base};
                 const version = "6.7.7.1.1";
                 await new Promise(res => {
                     const scr = dce("script");
-                    scr.src = `../dist/libav-${version}-${variant}.js`;
+                    scr.src = `${base}/libav-${version}-${variant}.js`;
                     scr.onload = res;
                     scr.onerror = () => alert("Failed to load variant!");
                     document.body.appendChild(scr);
