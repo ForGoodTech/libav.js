@@ -107,7 +107,7 @@
                 main.appendChild(exportFmtLabel);
                 const formatSel = dce("select");
                 formatSel.id = "format";
-                ["wav", "ogg"].forEach(f => {
+                ["wav", "ogg", "mp3", "aac", "flac"].forEach(f => {
                     const opt = dce("option");
                     opt.value = f;
                     opt.innerHTML = f;
@@ -122,6 +122,9 @@
                 const exportBtn = dce("button");
                 exportBtn.innerHTML = "Export";
                 main.appendChild(exportBtn);
+
+                const cutBox = dce("pre");
+                main.appendChild(cutBox);
 
                 const outCanvas = dce("canvas");
                 outCanvas.width = 800;
@@ -145,10 +148,19 @@
                         ctx.lineTo(x, canvas.height);
                         ctx.stroke();
                     }
+                    cutBox.textContent = cuts.map(c => c.toFixed(3)).join("\n");
                 }
                 redraw();
 
-                function addCut(t) {
+                function toggleCut(t) {
+                    const thresh = 5 / canvas.width * buffer.duration;
+                    for (let i = 0; i < cuts.length; i++) {
+                        if (Math.abs(cuts[i] - t) < thresh) {
+                            cuts.splice(i, 1);
+                            redraw();
+                            return;
+                        }
+                    }
                     cuts.push(t);
                     cuts.sort((a, b) => a - b);
                     redraw();
@@ -157,11 +169,11 @@
                 canvas.onclick = ev => {
                     const rect = canvas.getBoundingClientRect();
                     const x = ev.clientX - rect.left;
-                    const t = x / canvas.width * buffer.duration;
-                    addCut(t);
+                    const t = Math.min(Math.max(x / canvas.width * buffer.duration, 0), buffer.duration);
+                    toggleCut(t);
                 };
 
-                markBtn.onclick = () => addCut(audio.currentTime);
+                markBtn.onclick = () => toggleCut(audio.currentTime);
 
                 exportBtn.onclick = async () => {
                     if (cuts.length % 2 === 1) {
@@ -172,17 +184,22 @@
                     // Construct output buffer
                     const sr = buffer.sampleRate;
                     const chs = buffer.numberOfChannels;
+                    const segments = [];
                     let length = 0;
-                    for (let i = 0; i < cuts.length; i += 2)
-                        length += Math.floor((cuts[i+1] - cuts[i]) * sr);
+                    for (let i = 0; i < cuts.length; i += 2) {
+                        const s = Math.max(0, Math.floor(cuts[i] * sr));
+                        const e = Math.min(Math.floor(cuts[i+1] * sr), buffer.length);
+                        if (e > s) {
+                            segments.push([s, e]);
+                            length += e - s;
+                        }
+                    }
                     const outBuf = audioCtx.createBuffer(chs, length, sr);
                     for (let ch = 0; ch < chs; ch++) {
                         const data = buffer.getChannelData(ch);
                         const out = outBuf.getChannelData(ch);
                         let ptr = 0;
-                        for (let i = 0; i < cuts.length; i += 2) {
-                            const s = Math.floor(cuts[i] * sr);
-                            const e = Math.floor(cuts[i+1] * sr);
+                        for (const [s, e] of segments) {
                             out.set(data.subarray(s, e), ptr);
                             ptr += e - s;
                         }
@@ -192,18 +209,20 @@
                     drawWaveform(outCanvas, outBuf);
 
                     // Encode
-                    let blob;
+                    let blob, ext = formatSel.value;
                     if (formatSel.value === "wav") {
                         blob = new Blob([encodeWAV(outBuf)], {type: "audio/wav"});
                     } else {
-                        const data = await encodeOpusOgg(libav, outBuf);
-                        blob = new Blob([data.buffer], {type: "audio/ogg"});
+                        const fmt = formatMap[formatSel.value];
+                        const data = await encodeWithLibAV(libav, outBuf, fmt);
+                        blob = new Blob([data.buffer], {type: fmt.mime});
+                        ext = fmt.ext;
                     }
                     outAudio.src = URL.createObjectURL(blob);
 
                     const link = dce("a");
                     link.href = outAudio.src;
-                    link.download = `output.${formatSel.value}`;
+                    link.download = `output.${ext}`;
                     link.innerHTML = "Download";
                     main.appendChild(link);
                 };
@@ -262,12 +281,19 @@
                     return out.buffer;
                 }
 
-                async function encodeOpusOgg(libav, buf) {
+                const formatMap = {
+                    ogg: {codec: "libopus", ext: "ogg", mime: "audio/ogg"},
+                    mp3: {codec: "libmp3lame", ext: "mp3", mime: "audio/mpeg"},
+                    aac: {codec: "aac", ext: "aac", mime: "audio/aac"},
+                    flac: {codec: "flac", ext: "flac", mime: "audio/flac"}
+                };
+
+                async function encodeWithLibAV(libav, buf, fmt) {
                     const sr = buf.sampleRate;
                     const chs = buf.numberOfChannels;
                     const channel_layout = chs === 1 ? 4 : 3;
                     const [codec, c, frame, pkt, frame_size] =
-                        await libav.ff_init_encoder("libopus", {
+                        await libav.ff_init_encoder(fmt.codec, {
                             ctx: {
                                 bit_rate: 128000,
                                 sample_fmt: libav.AV_SAMPLE_FMT_FLT,
@@ -278,7 +304,7 @@
                             time_base: [1, sr]
                         });
                     const [oc, , pb] = await libav.ff_init_muxer(
-                        {filename: "out.ogg", open: true}, [[c, 1, sr]]);
+                        {filename: `out.${fmt.ext}`, open: true}, [[c, 1, sr]]);
                     await libav.avformat_write_header(oc, 0);
                     const inter = new Float32Array(buf.length * chs);
                     for (let ch = 0; ch < chs; ch++) {
@@ -302,8 +328,8 @@
                     const packets = await libav.ff_encode_multi(c, frame, pkt, frames, true);
                     await libav.ff_write_multi(oc, pkt, packets);
                     await libav.av_write_trailer(oc);
-                    const data = await libav.readFile("out.ogg");
-                    await libav.unlink("out.ogg");
+                    const data = await libav.readFile(`out.${fmt.ext}`);
+                    await libav.unlink(`out.${fmt.ext}`);
                     await libav.ff_free_muxer(oc, pb);
                     await libav.ff_free_encoder(c, frame, pkt);
                     return data;
