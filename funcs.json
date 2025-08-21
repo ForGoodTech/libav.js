@@ -260,7 +260,9 @@
             ["av_read_frame", "number", ["number", "number"], {"async": true, "returnsErrno": true}],
             ["av_seek_frame", "number", ["number", "number", "number", "number"], {"async": true, "returnsErrno": true, "notypes": true}],
             ["av_write_frame", "number", ["number", "number"]],
-            ["av_write_trailer", "number", ["number"]]
+            ["av_write_trailer", "number", ["number"]],
+            ["av_demuxer_iterate_js", "number", ["number"]],
+            ["av_muxer_iterate_js", "number", ["number"]]
         ],
 
         "fs": [
@@ -313,6 +315,14 @@
                 "duration",
                 "durationhi",
                 {"name": "time_base", "rational": true}
+            ]],
+            ["AVInputFormat", [
+                {"name": "name", "string": true},
+                {"name": "extensions", "string": true}
+            ]],
+            ["AVOutputFormat", [
+                {"name": "name", "string": true},
+                {"name": "extensions", "string": true}
             ]]
         ],
 

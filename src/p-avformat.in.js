@@ -1041,3 +1041,30 @@ Module.ff_read_multi = function(fmt_ctx, pkt, devfile, opts) {
     console.log("[libav.js] ff_read_multi is deprecated. Use ff_read_frame_multi.");
     return Module.ff_read_frame_multi(fmt_ctx, pkt, opts);
 };
+
+/**
+ * Debug helper to list supported container formats.
+ * Returns [demuxers, muxers].
+ */
+/// @types ff_detect_formats@sync(): @promsync@[string[], string[]]@
+var ff_detect_formats = Module.ff_detect_formats = function() {
+    var demuxers = [], muxers = [];
+    var opaque = malloc(4);
+    if (!opaque)
+        throw new Error("Failed to malloc");
+    Module.HEAPU32[opaque >> 2] = 0;
+
+    var fmt;
+    while ((fmt = av_demuxer_iterate_js(opaque)))
+        demuxers.push(AVInputFormat_name(fmt));
+
+    Module.HEAPU32[opaque >> 2] = 0;
+    while ((fmt = av_muxer_iterate_js(opaque)))
+        muxers.push(AVOutputFormat_name(fmt));
+
+    free(opaque);
+
+    console.debug("Supported demuxers: " + demuxers.join(", "));
+    console.debug("Supported muxers: " + muxers.join(", "));
+    return [demuxers, muxers];
+};

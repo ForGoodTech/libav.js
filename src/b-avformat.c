@@ -37,6 +37,18 @@ BL(int64_t, duration)
 #undef B
 #undef BL
 
+/* AVInputFormat */
+#define B(type, field) A(AVInputFormat, type, field)
+B(const char *, name)
+B(const char *, extensions)
+#undef B
+
+/* AVOutputFormat */
+#define B(type, field) A(AVOutputFormat, type, field)
+B(const char *, name)
+B(const char *, extensions)
+#undef B
+
 RAT(AVStream, time_base)
 
 int avformat_seek_file_min(
@@ -55,6 +67,14 @@ int avformat_seek_file_approx(
     AVFormatContext *s, int stream_index, int64_t ts, int flags
 ) {
     return avformat_seek_file(s, stream_index, INT64_MIN, ts, INT64_MAX, flags);
+}
+
+AVInputFormat *av_demuxer_iterate_js(void **opaque) {
+    return av_demuxer_iterate(opaque);
+}
+
+AVOutputFormat *av_muxer_iterate_js(void **opaque) {
+    return av_muxer_iterate(opaque);
 }
 
 AVFormatContext *avformat_alloc_output_context2_js(AVOutputFormat *oformat,
