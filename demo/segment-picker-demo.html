@@ -65,6 +65,12 @@
                 });
                 const libav = await LibAV.LibAV();
 
+                const formatMap = {};
+                if (await libav.avcodec_find_encoder_by_name("libopus"))
+                    formatMap.ogg = {codec: "libopus", ext: "ogg", mime: "audio/ogg", sample_fmt: libav.AV_SAMPLE_FMT_FLT};
+                if (await libav.avcodec_find_encoder_by_name("flac"))
+                    formatMap.flac = {codec: "flac", ext: "flac", mime: "audio/flac", sample_fmt: libav.AV_SAMPLE_FMT_S16};
+
                 // Load the audio file
                 const file = await new Promise(res => {
                     main.innerHTML = "";
@@ -107,7 +113,7 @@
                 main.appendChild(exportFmtLabel);
                 const formatSel = dce("select");
                 formatSel.id = "format";
-                ["wav", "ogg", "mp3", "aac", "flac"].forEach(f => {
+                ["wav", ...Object.keys(formatMap)].forEach(f => {
                     const opt = dce("option");
                     opt.value = f;
                     opt.innerHTML = f;
@@ -281,13 +287,6 @@
                     return out.buffer;
                 }
 
-                const formatMap = {
-                    ogg: {codec: "libopus", ext: "ogg", mime: "audio/ogg"},
-                    mp3: {codec: "libmp3lame", ext: "mp3", mime: "audio/mpeg"},
-                    aac: {codec: "aac", ext: "aac", mime: "audio/aac"},
-                    flac: {codec: "flac", ext: "flac", mime: "audio/flac"}
-                };
-
                 async function encodeWithLibAV(libav, buf, fmt) {
                     const sr = buf.sampleRate;
                     const chs = buf.numberOfChannels;
@@ -296,7 +295,7 @@
                         await libav.ff_init_encoder(fmt.codec, {
                             ctx: {
                                 bit_rate: 128000,
-                                sample_fmt: libav.AV_SAMPLE_FMT_FLT,
+                                sample_fmt: fmt.sample_fmt,
                                 sample_rate: sr,
                                 channel_layout,
                                 channels: chs
@@ -306,11 +305,21 @@
                     const [oc, , pb] = await libav.ff_init_muxer(
                         {filename: `out.${fmt.ext}`, open: true}, [[c, 1, sr]]);
                     await libav.avformat_write_header(oc, 0);
-                    const inter = new Float32Array(buf.length * chs);
-                    for (let ch = 0; ch < chs; ch++) {
-                        const data = buf.getChannelData(ch);
-                        for (let i = 0; i < buf.length; i++)
-                            inter[i*chs + ch] = data[i];
+                    let inter;
+                    if (fmt.sample_fmt === libav.AV_SAMPLE_FMT_S16) {
+                        inter = new Int16Array(buf.length * chs);
+                        for (let ch = 0; ch < chs; ch++) {
+                            const data = buf.getChannelData(ch);
+                            for (let i = 0; i < buf.length; i++)
+                                inter[i*chs + ch] = Math.max(-1, Math.min(1, data[i])) * 0x7fff;
+                        }
+                    } else {
+                        inter = new Float32Array(buf.length * chs);
+                        for (let ch = 0; ch < chs; ch++) {
+                            const data = buf.getChannelData(ch);
+                            for (let i = 0; i < buf.length; i++)
+                                inter[i*chs + ch] = data[i];
+                        }
                     }
                     const frames = [];
                     let pts = 0;
@@ -319,7 +328,7 @@
                         frames.push({
                             data: inter.subarray(i*chs, end*chs),
                             channel_layout,
-                            format: libav.AV_SAMPLE_FMT_FLT,
+                            format: fmt.sample_fmt,
                             pts,
                             sample_rate: sr
                         });
