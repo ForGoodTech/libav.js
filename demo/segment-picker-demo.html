@@ -29,29 +29,7 @@
                 document.body.appendChild(main);
 
                 const version = "6.7.7.1.1";
-                const variant = await new Promise(res => {
-                    const label = dce("label");
-                    label.innerHTML = "Variant:&nbsp;";
-                    label.htmlFor = "variant";
-                    main.appendChild(label);
-                    const vbox = dce("input");
-                    vbox.type = "text";
-                    vbox.id = "variant";
-                    vbox.value = "default";
-                    main.appendChild(vbox);
-                    const ok = dce("button");
-                    ok.innerHTML = "Load";
-                    main.appendChild(ok);
-
-                    vbox.focus();
-                    vbox.select();
-
-                    vbox.onkeypress = ev => {
-                        if (ev.key === "Enter")
-                            res(vbox.value);
-                    };
-                    ok.onclick = () => res(vbox.value);
-                });
+                const variant = "obsolete";
                 main.innerHTML = "Loading...";
 
                 const base = `../libav.js-${version}/dist`;
@@ -75,7 +53,6 @@
                 await addFormat("ogg", "libopus", "ogg", "audio/ogg", libav.AV_SAMPLE_FMT_FLT);
                 await addFormat("flac", "flac", "flac", "audio/flac", libav.AV_SAMPLE_FMT_S16);
                 await addFormat("mp3", "libmp3lame", "mp3", "audio/mpeg", libav.AV_SAMPLE_FMT_FLTP);
-                await addFormat("aac", "aac", "m4a", "audio/mp4", libav.AV_SAMPLE_FMT_FLTP);
                 await addFormat("vorbis", "libvorbis", "ogg", "audio/ogg", libav.AV_SAMPLE_FMT_FLTP);
                 console.log("formats:", Object.keys(formatMap));
 
