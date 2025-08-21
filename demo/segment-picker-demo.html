@@ -28,6 +28,7 @@
                 const main = dce("div");
                 document.body.appendChild(main);
 
+                const version = "6.7.7.1.1";
                 const variant = await new Promise(res => {
                     const label = dce("label");
                     label.innerHTML = "Variant:&nbsp;";
@@ -36,7 +37,7 @@
                     const vbox = dce("input");
                     vbox.type = "text";
                     vbox.id = "variant";
-                    vbox.value = "all";
+                    vbox.value = "default";
                     main.appendChild(vbox);
                     const ok = dce("button");
                     ok.innerHTML = "Load";
@@ -57,7 +58,7 @@
                 LibAV = {base};
                 await new Promise(res => {
                     const scr = dce("script");
-                    scr.src = `${base}/libav-${variant}.js?${Math.random()}`;
+                    scr.src = `${base}/libav-${version}-${variant}.js?${Math.random()}`;
                     scr.onload = res;
                     scr.onerror = () => alert("Failed to load variant!");
                     document.body.appendChild(scr);
