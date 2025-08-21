@@ -36,7 +36,7 @@
                     const vbox = dce("input");
                     vbox.type = "text";
                     vbox.id = "variant";
-                    vbox.value = "default";
+                    vbox.value = "all";
                     main.appendChild(vbox);
                     const ok = dce("button");
                     ok.innerHTML = "Load";
@@ -67,7 +67,9 @@
 
                 const formatMap = {};
                 async function addFormat(name, codec, ext, mime, sample_fmt) {
-                    if (await libav.avcodec_find_encoder_by_name(codec))
+                    const enc = await libav.avcodec_find_encoder_by_name(codec);
+                    console.log(`encoder ${codec}: ${enc ? "found" : "missing"}`);
+                    if (enc)
                         formatMap[name] = {codec, ext, mime, sample_fmt};
                 }
                 await addFormat("ogg", "libopus", "ogg", "audio/ogg", libav.AV_SAMPLE_FMT_FLT);
@@ -75,6 +77,7 @@
                 await addFormat("mp3", "libmp3lame", "mp3", "audio/mpeg", libav.AV_SAMPLE_FMT_FLTP);
                 await addFormat("aac", "aac", "m4a", "audio/mp4", libav.AV_SAMPLE_FMT_FLTP);
                 await addFormat("vorbis", "libvorbis", "ogg", "audio/ogg", libav.AV_SAMPLE_FMT_FLTP);
+                console.log("formats:", Object.keys(formatMap));
 
                 // Load the audio file
                 const file = await new Promise(res => {
