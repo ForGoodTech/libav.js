@@ -54,7 +54,7 @@
                 });
                 main.innerHTML = "Loading...";
 
-                const base = "../dist";
+                const base = `../libav.js-${version}/dist`;
                 LibAV = {base};
                 await new Promise(res => {
                     const scr = dce("script");
