@@ -53,12 +53,11 @@
                 });
                 main.innerHTML = "Loading...";
 
-                const base = "../libav.js-6.7.7.1.1/dist";
+                const base = "../dist";
                 LibAV = {base};
-                const version = "6.7.7.1.1";
                 await new Promise(res => {
                     const scr = dce("script");
-                    scr.src = `${base}/libav-${version}-${variant}.js`;
+                    scr.src = `${base}/libav-${variant}.js?${Math.random()}`;
                     scr.onload = res;
                     scr.onerror = () => alert("Failed to load variant!");
                     document.body.appendChild(scr);
