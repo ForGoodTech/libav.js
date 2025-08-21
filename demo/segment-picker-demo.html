@@ -181,27 +181,37 @@
                         return;
                     }
 
-                    // Construct output buffer
-                    const sr = buffer.sampleRate;
-                    const chs = buffer.numberOfChannels;
-                    const segments = [];
-                    let length = 0;
-                    for (let i = 0; i < cuts.length; i += 2) {
-                        const s = Math.max(0, Math.floor(cuts[i] * sr));
-                        const e = Math.min(Math.floor(cuts[i+1] * sr), buffer.length);
-                        if (e > s) {
-                            segments.push([s, e]);
-                            length += e - s;
+                    // Construct output buffer. If no cuts are provided, use
+                    // the whole buffer.
+                    let outBuf;
+                    if (cuts.length === 0) {
+                        outBuf = buffer;
+                    } else {
+                        const sr = buffer.sampleRate;
+                        const chs = buffer.numberOfChannels;
+                        const segments = [];
+                        let length = 0;
+                        for (let i = 0; i < cuts.length; i += 2) {
+                            const s = Math.max(0, Math.floor(cuts[i] * sr));
+                            const e = Math.min(Math.floor(cuts[i+1] * sr), buffer.length);
+                            if (e > s) {
+                                segments.push([s, e]);
+                                length += e - s;
+                            }
                         }
-                    }
-                    const outBuf = audioCtx.createBuffer(chs, length, sr);
-                    for (let ch = 0; ch < chs; ch++) {
-                        const data = buffer.getChannelData(ch);
-                        const out = outBuf.getChannelData(ch);
-                        let ptr = 0;
-                        for (const [s, e] of segments) {
-                            out.set(data.subarray(s, e), ptr);
-                            ptr += e - s;
+                        if (length === 0) {
+                            alert("No audio to export.");
+                            return;
+                        }
+                        outBuf = audioCtx.createBuffer(chs, length, sr);
+                        for (let ch = 0; ch < chs; ch++) {
+                            const data = buffer.getChannelData(ch);
+                            const out = outBuf.getChannelData(ch);
+                            let ptr = 0;
+                            for (const [s, e] of segments) {
+                                out.set(data.subarray(s, e), ptr);
+                                ptr += e - s;
+                            }
                         }
                     }
 
