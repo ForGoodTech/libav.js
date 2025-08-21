@@ -66,10 +66,15 @@
                 const libav = await LibAV.LibAV();
 
                 const formatMap = {};
-                if (await libav.avcodec_find_encoder_by_name("libopus"))
-                    formatMap.ogg = {codec: "libopus", ext: "ogg", mime: "audio/ogg", sample_fmt: libav.AV_SAMPLE_FMT_FLT};
-                if (await libav.avcodec_find_encoder_by_name("flac"))
-                    formatMap.flac = {codec: "flac", ext: "flac", mime: "audio/flac", sample_fmt: libav.AV_SAMPLE_FMT_S16};
+                async function addFormat(name, codec, ext, mime, sample_fmt) {
+                    if (await libav.avcodec_find_encoder_by_name(codec))
+                        formatMap[name] = {codec, ext, mime, sample_fmt};
+                }
+                await addFormat("ogg", "libopus", "ogg", "audio/ogg", libav.AV_SAMPLE_FMT_FLT);
+                await addFormat("flac", "flac", "flac", "audio/flac", libav.AV_SAMPLE_FMT_S16);
+                await addFormat("mp3", "libmp3lame", "mp3", "audio/mpeg", libav.AV_SAMPLE_FMT_FLTP);
+                await addFormat("aac", "aac", "m4a", "audio/mp4", libav.AV_SAMPLE_FMT_FLTP);
+                await addFormat("vorbis", "libvorbis", "ogg", "audio/ogg", libav.AV_SAMPLE_FMT_FLTP);
 
                 // Load the audio file
                 const file = await new Promise(res => {
@@ -305,34 +310,58 @@
                     const [oc, , pb] = await libav.ff_init_muxer(
                         {filename: `out.${fmt.ext}`, open: true}, [[c, 1, sr]]);
                     await libav.avformat_write_header(oc, 0);
-                    let inter;
-                    if (fmt.sample_fmt === libav.AV_SAMPLE_FMT_S16) {
-                        inter = new Int16Array(buf.length * chs);
-                        for (let ch = 0; ch < chs; ch++) {
-                            const data = buf.getChannelData(ch);
-                            for (let i = 0; i < buf.length; i++)
-                                inter[i*chs + ch] = Math.max(-1, Math.min(1, data[i])) * 0x7fff;
-                        }
-                    } else {
-                        inter = new Float32Array(buf.length * chs);
-                        for (let ch = 0; ch < chs; ch++) {
-                            const data = buf.getChannelData(ch);
-                            for (let i = 0; i < buf.length; i++)
-                                inter[i*chs + ch] = data[i];
-                        }
-                    }
                     const frames = [];
                     let pts = 0;
-                    for (let i = 0; i < buf.length; i += frame_size) {
-                        const end = Math.min(i + frame_size, buf.length);
-                        frames.push({
-                            data: inter.subarray(i*chs, end*chs),
-                            channel_layout,
-                            format: fmt.sample_fmt,
-                            pts,
-                            sample_rate: sr
-                        });
-                        pts += end - i;
+                    if (fmt.sample_fmt === libav.AV_SAMPLE_FMT_S16 ||
+                        fmt.sample_fmt === libav.AV_SAMPLE_FMT_FLT) {
+                        const inter = fmt.sample_fmt === libav.AV_SAMPLE_FMT_S16
+                            ? new Int16Array(buf.length * chs)
+                            : new Float32Array(buf.length * chs);
+                        for (let ch = 0; ch < chs; ch++) {
+                            const data = buf.getChannelData(ch);
+                            for (let i = 0; i < buf.length; i++) {
+                                const v = fmt.sample_fmt === libav.AV_SAMPLE_FMT_S16
+                                    ? Math.max(-1, Math.min(1, data[i])) * 0x7fff
+                                    : data[i];
+                                inter[i*chs + ch] = v;
+                            }
+                        }
+                        for (let i = 0; i < buf.length; i += frame_size) {
+                            const end = Math.min(i + frame_size, buf.length);
+                            frames.push({
+                                data: inter.subarray(i*chs, end*chs),
+                                channel_layout,
+                                format: fmt.sample_fmt,
+                                pts,
+                                sample_rate: sr
+                            });
+                            pts += end - i;
+                        }
+                    } else {
+                        const planes = [];
+                        const makePlane = fmt.sample_fmt === libav.AV_SAMPLE_FMT_S16P
+                            ? () => new Int16Array(buf.length)
+                            : () => new Float32Array(buf.length);
+                        for (let ch = 0; ch < chs; ch++) {
+                            const data = buf.getChannelData(ch);
+                            const plane = makePlane();
+                            for (let i = 0; i < buf.length; i++)
+                                plane[i] = fmt.sample_fmt === libav.AV_SAMPLE_FMT_S16P
+                                    ? Math.max(-1, Math.min(1, data[i])) * 0x7fff
+                                    : data[i];
+                            planes.push(plane);
+                        }
+                        for (let i = 0; i < buf.length; i += frame_size) {
+                            const end = Math.min(i + frame_size, buf.length);
+                            frames.push({
+                                data: planes.map(p => p.subarray(i, end)),
+                                channel_layout,
+                                format: fmt.sample_fmt,
+                                pts,
+                                sample_rate: sr
+                            });
+                            pts += end - i;
+                        }
                     }
                     const packets = await libav.ff_encode_multi(c, frame, pkt, frames, true);
                     await libav.ff_write_multi(oc, pkt, packets);
