@@ -235,7 +235,14 @@
                         blob = new Blob([encodeWAV(outBuf)], {type: "audio/wav"});
                     } else {
                         const fmt = formatMap[formatSel.value];
-                        const data = await encodeWithLibAV(libav, outBuf, fmt);
+                        let data;
+                        try {
+                            data = await encodeWithLibAV(libav, outBuf, fmt);
+                        } catch (err) {
+                            console.error("Encoding failed", err);
+                            alert("Encoding failed: " + err);
+                            return;
+                        }
                         blob = new Blob([data.buffer], {type: fmt.mime});
                         ext = fmt.ext;
                     }
@@ -306,17 +313,45 @@
                     const sr = buf.sampleRate;
                     const chs = buf.numberOfChannels;
                     const channel_layout = chs === 1 ? 4 : 3;
-                    const [codec, c, frame, pkt, frame_size] =
+
+                    // Determine a supported sample format and log capabilities
+                    let sample_fmt = libav.AV_SAMPLE_FMT_FLT;
+                    const codec = await libav.avcodec_find_encoder_by_name(fmt.codec);
+                    if (codec) {
+                        const fmts = await libav.AVCodec_sample_fmts(codec);
+                        if (fmts && fmts.length) {
+                            const fmtNames = [];
+                            for (const f of fmts) {
+                                if (f === -1) break;
+                                fmtNames.push(await libav.av_get_sample_fmt_name(f));
+                            }
+                            console.log(`Encoder ${fmt.codec} supports sample formats: ${fmtNames.join(", ")}`);
+                            if (!fmts.includes(libav.AV_SAMPLE_FMT_FLT)) {
+                                sample_fmt = fmts[0];
+                                const chosenName = await libav.av_get_sample_fmt_name(sample_fmt);
+                                console.log(`Input format flt unsupported; will encode using ${chosenName}`);
+                            }
+                        } else {
+                            console.log(`No sample format list for encoder ${fmt.codec}`);
+                        }
+                    } else {
+                        console.log(`Could not find encoder ${fmt.codec}`);
+                    }
+
+                    console.log(`Initializing encoder ${fmt.codec} with sample format ${await libav.av_get_sample_fmt_name(sample_fmt)}`);
+                    const [, c, frame, pkt, frame_size] =
                         await libav.ff_init_encoder(fmt.codec, {
                             ctx: {
                                 bit_rate: 128000,
-                                sample_fmt: libav.AV_SAMPLE_FMT_FLT,
+                                sample_fmt,
                                 sample_rate: sr,
                                 channel_layout,
                                 channels: chs
                             },
                             time_base: [1, sr]
                         });
+                    const ctxFmt = await libav.AVCodecContext_sample_fmt(c);
+                    console.log(`Codec context using sample format ${await libav.av_get_sample_fmt_name(ctxFmt)}`);
                     const [oc, , pb] = await libav.ff_init_muxer(
                         {filename: `out.${fmt.ext}`, open: true}, [[c, 1, sr]]);
                     await libav.avformat_write_header(oc, 0);
