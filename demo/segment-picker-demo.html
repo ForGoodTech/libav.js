@@ -266,8 +266,8 @@
                 markBtn.onclick = () => toggleCut(audio.currentTime);
 
                 exportBtn.onclick = async () => {
-                    if (cuts.length % 2 === 1) {
-                        alert("Need an even number of cuts.");
+                    if (cuts.length === 1) {
+                        alert("Need at least two cuts.");
                         return;
                     }
 
@@ -282,7 +282,9 @@
                     } else {
                         for (let i = 0; i < cuts.length; i += 2) {
                             const s = Math.max(0, Math.floor(cuts[i] * sr));
-                            const e = Math.min(Math.floor(cuts[i+1] * sr), buffer.length);
+                            const e = (i + 1 < cuts.length)
+                                ? Math.min(Math.floor(cuts[i+1] * sr), buffer.length)
+                                : buffer.length;
                             if (e > s) {
                                 segments.push([s, e]);
                                 length += e - s;
