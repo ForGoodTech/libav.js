@@ -123,6 +123,7 @@
                 convertSel.disabled = true;
 
                 let trimmedBuf = null;
+                let currentFmt = null;
                 const sr = buffer.sampleRate;
                 const chs = buffer.numberOfChannels;
                 const channel_layout = chs === 1 ? 4 : 3;
@@ -245,9 +246,9 @@
                 const outAudio = dce("audio");
                 outAudio.controls = true;
                 main.appendChild(outAudio);
-                const link = dce("a");
-                link.style.display = "none";
-                main.appendChild(link);
+                const downloads = dce("div");
+                downloads.style.marginTop = "0.5em";
+                main.appendChild(downloads);
 
                 // Cut positions
                 const cuts = [];
@@ -289,16 +290,21 @@
 
                 markBtn.onclick = () => toggleCut(audio.currentTime);
 
-                async function updateOutput(buf, fmtName) {
+                async function addDownload(buf, fmtName, name) {
                     const res = await encodeBuffer(buf, fmtName);
                     if (!res)
                         return;
                     const {blob, ext} = res;
-                    outAudio.src = URL.createObjectURL(blob);
-                    link.href = outAudio.src;
-                    link.download = `output.${ext}`;
-                    link.innerHTML = "Download";
-                    link.style.display = "inline";
+                    const filename = name || `output.${ext}`;
+                    const url = URL.createObjectURL(blob);
+                    outAudio.src = url;
+                    const a = dce("a");
+                    a.href = url;
+                    a.download = filename;
+                    a.innerHTML = filename;
+                    a.style.display = "inline-block";
+                    a.style.marginRight = "1em";
+                    downloads.appendChild(a);
                 }
 
                 exportBtn.onclick = async () => {
@@ -345,8 +351,10 @@
                     // Draw output waveform
                     drawWaveform(outCanvas, outBuf);
 
+                    downloads.innerHTML = "";
                     trimmedBuf = outBuf;
-                    await updateOutput(trimmedBuf, formatSel.value);
+                    await addDownload(trimmedBuf, formatSel.value);
+                    currentFmt = formatSel.value;
 
                     convertSel.value = formatSel.value;
                     convertSel.disabled = false;
@@ -358,7 +366,8 @@
                         alert("No audio to convert.");
                         return;
                     }
-                    await updateOutput(trimmedBuf, convertSel.value);
+                    await addDownload(trimmedBuf, convertSel.value, `${currentFmt}_to.${convertSel.value}`);
+                    currentFmt = convertSel.value;
                 };
 
                 function drawWaveform(canvas, buf) {
