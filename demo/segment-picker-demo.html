@@ -114,6 +114,16 @@
                 main.appendChild(exportFmtLabel);
                 const formatSel = dce("select");
                 formatSel.id = "format";
+
+                const convertFmtLabel = dce("label");
+                convertFmtLabel.innerHTML = "Convert to:&nbsp;";
+                convertFmtLabel.htmlFor = "convert-format";
+                const convertSel = dce("select");
+                convertSel.id = "convert-format";
+                convertSel.disabled = true;
+
+                let trimmedBuf = null;
+                let currentFmt = null;
                 const sr = buffer.sampleRate;
                 const chs = buffer.numberOfChannels;
                 const channel_layout = chs === 1 ? 4 : 3;
@@ -198,10 +208,15 @@
                 }
                 console.log("Final supported formats:", supportedFormats);
                 supportedFormats.forEach(f => {
-                    const opt = dce("option");
-                    opt.value = f;
-                    opt.innerHTML = f;
-                    formatSel.appendChild(opt);
+                    const opt1 = dce("option");
+                    opt1.value = f;
+                    opt1.innerHTML = f;
+                    formatSel.appendChild(opt1);
+
+                    const opt2 = dce("option");
+                    opt2.value = f;
+                    opt2.innerHTML = f;
+                    convertSel.appendChild(opt2);
                 });
                 main.appendChild(formatSel);
 
@@ -212,6 +227,13 @@
                 const exportBtn = dce("button");
                 exportBtn.innerHTML = "Export";
                 main.appendChild(exportBtn);
+
+                main.appendChild(convertFmtLabel);
+                main.appendChild(convertSel);
+                const convertBtn = dce("button");
+                convertBtn.innerHTML = "Convert";
+                convertBtn.disabled = true;
+                main.appendChild(convertBtn);
 
                 const cutBox = dce("pre");
                 main.appendChild(cutBox);
@@ -224,6 +246,9 @@
                 const outAudio = dce("audio");
                 outAudio.controls = true;
                 main.appendChild(outAudio);
+                const downloads = dce("div");
+                downloads.style.marginTop = "0.5em";
+                main.appendChild(downloads);
 
                 // Cut positions
                 const cuts = [];
@@ -264,6 +289,23 @@
                 };
 
                 markBtn.onclick = () => toggleCut(audio.currentTime);
+
+                async function addDownload(buf, fmtName, name) {
+                    const res = await encodeBuffer(buf, fmtName);
+                    if (!res)
+                        return;
+                    const {blob, ext} = res;
+                    const filename = name || `output.${ext}`;
+                    const url = URL.createObjectURL(blob);
+                    outAudio.src = url;
+                    const a = dce("a");
+                    a.href = url;
+                    a.download = filename;
+                    a.innerHTML = filename;
+                    a.style.display = "inline-block";
+                    a.style.marginRight = "1em";
+                    downloads.appendChild(a);
+                }
 
                 exportBtn.onclick = async () => {
                     if (cuts.length === 1) {
@@ -309,30 +351,23 @@
                     // Draw output waveform
                     drawWaveform(outCanvas, outBuf);
 
-                    // Encode
-                    let blob, ext = formatSel.value;
-                    if (formatSel.value === "wav") {
-                        blob = new Blob([encodeWAV(outBuf)], {type: "audio/wav"});
-                    } else {
-                        const fmt = formatMap[formatSel.value];
-                        let data;
-                        try {
-                            data = await encodeWithLibAV(libav, outBuf, fmt);
-                        } catch (err) {
-                            console.error("Encoding failed", err);
-                            alert("Encoding failed: " + err);
-                            return;
-                        }
-                        blob = new Blob([data.buffer], {type: fmt.mime});
-                        ext = fmt.ext;
-                    }
-                    outAudio.src = URL.createObjectURL(blob);
+                    downloads.innerHTML = "";
+                    trimmedBuf = outBuf;
+                    await addDownload(trimmedBuf, formatSel.value);
+                    currentFmt = formatSel.value;
 
-                    const link = dce("a");
-                    link.href = outAudio.src;
-                    link.download = `output.${ext}`;
-                    link.innerHTML = "Download";
-                    main.appendChild(link);
+                    convertSel.value = formatSel.value;
+                    convertSel.disabled = false;
+                    convertBtn.disabled = false;
+                };
+
+                convertBtn.onclick = async () => {
+                    if (!trimmedBuf) {
+                        alert("No audio to convert.");
+                        return;
+                    }
+                    await addDownload(trimmedBuf, convertSel.value, `${currentFmt}_to.${convertSel.value}`);
+                    currentFmt = convertSel.value;
                 };
 
                 function drawWaveform(canvas, buf) {
@@ -529,6 +564,29 @@
                     await libav.ff_free_muxer(oc, pb);
                     await libav.ff_free_encoder(c, frame, pkt);
                     return data;
+                }
+
+                async function encodeBuffer(buf, fmtName) {
+                    if (fmtName === "wav") {
+                        return {
+                            blob: new Blob([encodeWAV(buf)], {type: "audio/wav"}),
+                            ext: "wav"
+                        };
+                    } else {
+                        const fmt = formatMap[fmtName];
+                        let data;
+                        try {
+                            data = await encodeWithLibAV(libav, buf, fmt);
+                        } catch (err) {
+                            console.error("Encoding failed", err);
+                            alert("Encoding failed: " + err);
+                            return null;
+                        }
+                        return {
+                            blob: new Blob([data.buffer], {type: fmt.mime}),
+                            ext: fmt.ext
+                        };
+                    }
                 }
 
             } catch (ex) {
