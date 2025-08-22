@@ -65,6 +65,13 @@
                 });
                 const libav = await LibAV.LibAV();
 
+                const formatMap = {
+                    ogg: {codec: "libopus", ext: "ogg", mime: "audio/ogg"},
+                    mp3: {codec: "libmp3lame", ext: "mp3", mime: "audio/mpeg"},
+                    aac: {codec: "aac", ext: "aac", mime: "audio/aac"},
+                    flac: {codec: "flac", ext: "flac", mime: "audio/flac"}
+                };
+
                 // Load the audio file
                 const file = await new Promise(res => {
                     main.innerHTML = "";
@@ -107,7 +114,12 @@
                 main.appendChild(exportFmtLabel);
                 const formatSel = dce("select");
                 formatSel.id = "format";
-                ["wav", "ogg", "mp3", "aac", "flac"].forEach(f => {
+                const supportedFormats = ["wav"];
+                for (const [fmt, info] of Object.entries(formatMap)) {
+                    const codec = await libav.avcodec_find_encoder_by_name(info.codec);
+                    if (codec) supportedFormats.push(fmt);
+                }
+                supportedFormats.forEach(f => {
                     const opt = dce("option");
                     opt.value = f;
                     opt.innerHTML = f;
@@ -280,13 +292,6 @@
                             inter[ptr++] = Math.max(-1, Math.min(1, chData[ch][i])) * 0x7fff;
                     return out.buffer;
                 }
-
-                const formatMap = {
-                    ogg: {codec: "libopus", ext: "ogg", mime: "audio/ogg"},
-                    mp3: {codec: "libmp3lame", ext: "mp3", mime: "audio/mpeg"},
-                    aac: {codec: "aac", ext: "aac", mime: "audio/aac"},
-                    flac: {codec: "flac", ext: "flac", mime: "audio/flac"}
-                };
 
                 async function encodeWithLibAV(libav, buf, fmt) {
                     const sr = buf.sampleRate;
