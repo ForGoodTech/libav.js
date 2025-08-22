@@ -281,12 +281,48 @@
                     redraw();
                 }
 
-                canvas.onclick = ev => {
+                let dragIdx = -1;
+                let dragStartX = 0;
+                let dragMoved = false;
+
+                canvas.addEventListener("mousedown", ev => {
                     const rect = canvas.getBoundingClientRect();
                     const x = ev.clientX - rect.left;
                     const t = Math.min(Math.max(x / canvas.width * buffer.duration, 0), buffer.duration);
-                    toggleCut(t);
-                };
+                    const thresh = 5 / canvas.width * buffer.duration;
+                    dragIdx = cuts.findIndex(c => Math.abs(c - t) < thresh);
+                    dragStartX = x;
+                    dragMoved = false;
+                });
+
+                canvas.addEventListener("mousemove", ev => {
+                    if (dragIdx === -1)
+                        return;
+                    const rect = canvas.getBoundingClientRect();
+                    const x = ev.clientX - rect.left;
+                    const t = Math.min(Math.max(x / canvas.width * buffer.duration, 0), buffer.duration);
+                    cuts[dragIdx] = t;
+                    cuts.sort((a, b) => a - b);
+                    dragIdx = cuts.indexOf(t);
+                    dragMoved = Math.abs(x - dragStartX) > 2;
+                    redraw();
+                });
+
+                window.addEventListener("mouseup", ev => {
+                    const rect = canvas.getBoundingClientRect();
+                    const x = ev.clientX - rect.left;
+                    const t = Math.min(Math.max(x / canvas.width * buffer.duration, 0), buffer.duration);
+                    if (dragIdx !== -1) {
+                        if (!dragMoved) {
+                            cuts.splice(dragIdx, 1);
+                        }
+                        dragIdx = -1;
+                        redraw();
+                    } else {
+                        if (Math.abs(x - dragStartX) <= 2)
+                            toggleCut(t);
+                    }
+                });
 
                 markBtn.onclick = () => toggleCut(audio.currentTime);
 
@@ -348,8 +384,8 @@
                         }
                     }
 
-                    // Draw output waveform
-                    drawWaveform(outCanvas, outBuf);
+                    // Draw output waveform using original duration for scale
+                    drawWaveform(outCanvas, outBuf, buffer.duration);
 
                     downloads.innerHTML = "";
                     trimmedBuf = outBuf;
@@ -370,15 +406,17 @@
                     currentFmt = convertSel.value;
                 };
 
-                function drawWaveform(canvas, buf) {
+                function drawWaveform(canvas, buf, baseDuration) {
                     const ctx = canvas.getContext("2d");
                     const {width, height} = canvas;
                     ctx.clearRect(0, 0, width, height);
                     ctx.strokeStyle = "black";
                     ctx.beginPath();
                     const data = buf.getChannelData(0);
-                    const step = Math.ceil(data.length / width);
-                    for (let i = 0; i < width; i++) {
+                    const ratio = baseDuration ? buf.duration / baseDuration : 1;
+                    const drawWidth = Math.max(1, Math.min(width, Math.round(width * ratio)));
+                    const step = Math.ceil(data.length / drawWidth);
+                    for (let i = 0; i < drawWidth; i++) {
                         let min = 1, max = -1;
                         for (let j = 0; j < step; j++) {
                             const v = data[i*step + j] || 0;
