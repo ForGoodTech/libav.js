@@ -198,13 +198,22 @@
                     const chs = buffer.numberOfChannels;
                     const segments = [];
                     let length = 0;
-                    for (let i = 0; i < cuts.length; i += 2) {
-                        const s = Math.max(0, Math.floor(cuts[i] * sr));
-                        const e = Math.min(Math.floor(cuts[i+1] * sr), buffer.length);
-                        if (e > s) {
-                            segments.push([s, e]);
-                            length += e - s;
+                    if (cuts.length === 0) {
+                        segments.push([0, buffer.length]);
+                        length = buffer.length;
+                    } else {
+                        for (let i = 0; i < cuts.length; i += 2) {
+                            const s = Math.max(0, Math.floor(cuts[i] * sr));
+                            const e = Math.min(Math.floor(cuts[i+1] * sr), buffer.length);
+                            if (e > s) {
+                                segments.push([s, e]);
+                                length += e - s;
+                            }
                         }
+                    }
+                    if (!length) {
+                        alert("No audio to export.");
+                        return;
                     }
                     const outBuf = audioCtx.createBuffer(chs, length, sr);
                     for (let ch = 0; ch < chs; ch++) {
