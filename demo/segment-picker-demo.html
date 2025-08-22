@@ -150,7 +150,7 @@
                         candidates = commonFmts;
                     }
 
-                    let chosenFmt;
+                    let chosenFmt, frameSize;
                     for (const f of candidates) {
                         const sfmtName = await libav.av_get_sample_fmt_name(f);
                         console.log(`Attempting to initialize ${info.codec} with sample format ${sfmtName}`);
@@ -165,9 +165,10 @@
                                 },
                                 time_base: [1, sr]
                             };
-                            const [, c, frame, pkt] = await libav.ff_init_encoder(info.codec, encOpts);
+                            const [, c, frame, pkt, fs] = await libav.ff_init_encoder(info.codec, encOpts);
                             await libav.ff_free_encoder(c, frame, pkt);
                             chosenFmt = f;
+                            frameSize = fs;
                             console.log(`Encoder ${info.codec} initialized with sample format ${sfmtName}`);
                             break;
                         } catch (err) {
@@ -177,7 +178,22 @@
 
                     if (chosenFmt !== undefined) {
                         info.sample_fmt = chosenFmt;
-                        supportedFormats.push(fmt);
+                        info.frame_size = frameSize;
+
+                        // Verify actual encoding works before enabling this format
+                        const testLen = Math.min(buffer.length, (frameSize || sr) * 300);
+                        const testBuf = audioCtx.createBuffer(chs, testLen, sr);
+                        for (let ch = 0; ch < chs; ch++) {
+                            const src = buffer.getChannelData(ch);
+                            testBuf.getChannelData(ch).set(src.subarray(0, testLen));
+                        }
+                        try {
+                            await encodeWithLibAV(libav, testBuf, info);
+                            supportedFormats.push(fmt);
+                            console.log(`Encoder ${info.codec} passed encode test`);
+                        } catch (err) {
+                            console.log(`Encoder ${info.codec} failed encode test:`, err);
+                        }
                     }
                 }
                 console.log("Final supported formats:", supportedFormats);
