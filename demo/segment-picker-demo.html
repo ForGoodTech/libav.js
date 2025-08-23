@@ -96,6 +96,8 @@
                 const audioCtx = new AudioContext();
                 const buffer = await audioCtx.decodeAudioData(arrayBuf);
 
+                const fileBase = file.name.replace(/\.[^/.]+$/, "");
+
                 main.innerHTML = "";
 
                 const fileNameLabel = dce("label");
@@ -387,12 +389,12 @@
 
                 markBtn.onclick = () => toggleCut(audio.currentTime);
 
-                async function addDownload(buf, fmtName, name) {
+                async function addDownload(buf, fmtName, baseName) {
                     const res = await encodeBuffer(buf, fmtName);
                     if (!res)
                         return;
                     const {blob, ext} = res;
-                    const filename = name || `output.${ext}`;
+                    const filename = baseName ? `${baseName}.${ext}` : `output.${ext}`;
                     const url = URL.createObjectURL(blob);
                     outAudio.src = url;
                     const a = dce("a");
@@ -449,8 +451,7 @@
                     trimmedBuf = outBuf;
                     outPos.max = trimmedBuf.duration.toFixed(3);
                     outPos.disabled = false;
-                    downloads.innerHTML = "";
-                    await addDownload(trimmedBuf, formatSel.value);
+                    await addDownload(trimmedBuf, formatSel.value, fileBase);
                     outPos.value = "0";
                     redrawOut();
                 };
