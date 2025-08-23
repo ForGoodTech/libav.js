@@ -103,6 +103,19 @@
                 audio.src = URL.createObjectURL(file);
                 main.appendChild(audio);
 
+                const audioPosLabel = dce("label");
+                audioPosLabel.innerHTML = "Time:&nbsp;";
+                audioPosLabel.htmlFor = "audio-pos";
+                main.appendChild(audioPosLabel);
+                const audioPos = dce("input");
+                audioPos.type = "number";
+                audioPos.id = "audio-pos";
+                audioPos.step = "0.001";
+                audioPos.min = 0;
+                audioPos.max = buffer.duration.toFixed(3);
+                audioPos.value = "0";
+                main.appendChild(audioPos);
+
                 const canvas = dce("canvas");
                 canvas.width = 800;
                 canvas.height = 200;
@@ -246,6 +259,18 @@
                 const outAudio = dce("audio");
                 outAudio.controls = true;
                 main.appendChild(outAudio);
+                const outPosLabel = dce("label");
+                outPosLabel.innerHTML = "Time:&nbsp;";
+                outPosLabel.htmlFor = "out-pos";
+                main.appendChild(outPosLabel);
+                const outPos = dce("input");
+                outPos.type = "number";
+                outPos.id = "out-pos";
+                outPos.step = "0.001";
+                outPos.min = 0;
+                outPos.value = "0";
+                outPos.disabled = true;
+                main.appendChild(outPos);
                 const downloads = dce("div");
                 downloads.style.marginTop = "0.5em";
                 main.appendChild(downloads);
@@ -255,6 +280,16 @@
                 function redraw() {
                     drawWaveform(canvas, buffer);
                     const ctx = canvas.getContext("2d");
+                    ctx.fillStyle = "rgba(255,0,0,0.1)";
+                    if (cuts.length === 0) {
+                        ctx.fillRect(0, 0, canvas.width, canvas.height);
+                    } else {
+                        for (let i = 0; i < cuts.length; i += 2) {
+                            const s = cuts[i] / buffer.duration * canvas.width;
+                            const e = ((i + 1 < cuts.length) ? cuts[i+1] : buffer.duration) / buffer.duration * canvas.width;
+                            ctx.fillRect(s, 0, e - s, canvas.height);
+                        }
+                    }
                     ctx.strokeStyle = "red";
                     for (const cut of cuts) {
                         const x = cut / buffer.duration * canvas.width;
@@ -263,9 +298,56 @@
                         ctx.lineTo(x, canvas.height);
                         ctx.stroke();
                     }
+                    const px = audio.currentTime / buffer.duration * canvas.width;
+                    ctx.strokeStyle = "green";
+                    ctx.beginPath();
+                    ctx.moveTo(px, 0);
+                    ctx.lineTo(px, canvas.height);
+                    ctx.stroke();
                     cutBox.textContent = cuts.map(c => c.toFixed(3)).join("\n");
                 }
                 redraw();
+
+                function redrawOut() {
+                    if (!trimmedBuf)
+                        return;
+                    drawWaveform(outCanvas, trimmedBuf, buffer.duration);
+                    const ctx = outCanvas.getContext("2d");
+                    const px = outAudio.currentTime / buffer.duration * outCanvas.width;
+                    ctx.strokeStyle = "green";
+                    ctx.beginPath();
+                    ctx.moveTo(px, 0);
+                    ctx.lineTo(px, outCanvas.height);
+                    ctx.stroke();
+                }
+
+                audio.addEventListener("timeupdate", () => {
+                    audioPos.value = audio.currentTime.toFixed(3);
+                    redraw();
+                });
+                audio.addEventListener("seeked", () => {
+                    audioPos.value = audio.currentTime.toFixed(3);
+                    redraw();
+                });
+                audioPos.addEventListener("change", () => {
+                    const t = Math.min(Math.max(+audioPos.value, 0), audio.duration);
+                    audio.currentTime = t;
+                    redraw();
+                });
+
+                outAudio.addEventListener("timeupdate", () => {
+                    outPos.value = outAudio.currentTime.toFixed(3);
+                    redrawOut();
+                });
+                outAudio.addEventListener("seeked", () => {
+                    outPos.value = outAudio.currentTime.toFixed(3);
+                    redrawOut();
+                });
+                outPos.addEventListener("change", () => {
+                    const t = Math.min(Math.max(+outPos.value, 0), outAudio.duration || 0);
+                    outAudio.currentTime = t;
+                    redrawOut();
+                });
 
                 function toggleCut(t) {
                     const thresh = 5 / canvas.width * buffer.duration;
@@ -384,12 +466,14 @@
                         }
                     }
 
-                    // Draw output waveform using original duration for scale
-                    drawWaveform(outCanvas, outBuf, buffer.duration);
-
-                    downloads.innerHTML = "";
+                    // Prepare output display
                     trimmedBuf = outBuf;
+                    outPos.max = trimmedBuf.duration.toFixed(3);
+                    outPos.disabled = false;
+                    downloads.innerHTML = "";
                     await addDownload(trimmedBuf, formatSel.value);
+                    outPos.value = "0";
+                    redrawOut();
                     currentFmt = formatSel.value;
 
                     convertSel.value = formatSel.value;
@@ -403,6 +487,8 @@
                         return;
                     }
                     await addDownload(trimmedBuf, convertSel.value, `${currentFmt}_to.${convertSel.value}`);
+                    outPos.value = "0";
+                    redrawOut();
                     currentFmt = convertSel.value;
                 };
 
