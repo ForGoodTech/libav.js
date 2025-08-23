@@ -98,6 +98,10 @@
 
                 main.innerHTML = "";
 
+                const fileNameLabel = dce("label");
+                fileNameLabel.textContent = `File: ${file.name}`;
+                main.appendChild(fileNameLabel);
+
                 const audio = dce("audio");
                 audio.controls = true;
                 audio.src = URL.createObjectURL(file);
@@ -121,22 +125,14 @@
                 canvas.height = 200;
                 main.appendChild(canvas);
 
-                const exportFmtLabel = dce("label");
-                exportFmtLabel.innerHTML = "Format:&nbsp;";
-                exportFmtLabel.htmlFor = "format";
-                main.appendChild(exportFmtLabel);
+                const exportBtn = dce("button");
+                exportBtn.innerHTML = "Export to this format:";
+                main.appendChild(exportBtn);
                 const formatSel = dce("select");
                 formatSel.id = "format";
-
-                const convertFmtLabel = dce("label");
-                convertFmtLabel.innerHTML = "Convert to:&nbsp;";
-                convertFmtLabel.htmlFor = "convert-format";
-                const convertSel = dce("select");
-                convertSel.id = "convert-format";
-                convertSel.disabled = true;
+                main.appendChild(formatSel);
 
                 let trimmedBuf = null;
-                let currentFmt = null;
                 const sr = buffer.sampleRate;
                 const chs = buffer.numberOfChannels;
                 const channel_layout = chs === 1 ? 4 : 3;
@@ -225,28 +221,11 @@
                     opt1.value = f;
                     opt1.innerHTML = f;
                     formatSel.appendChild(opt1);
-
-                    const opt2 = dce("option");
-                    opt2.value = f;
-                    opt2.innerHTML = f;
-                    convertSel.appendChild(opt2);
                 });
-                main.appendChild(formatSel);
 
                 const markBtn = dce("button");
                 markBtn.innerHTML = "Mark";
                 main.appendChild(markBtn);
-
-                const exportBtn = dce("button");
-                exportBtn.innerHTML = "Export";
-                main.appendChild(exportBtn);
-
-                main.appendChild(convertFmtLabel);
-                main.appendChild(convertSel);
-                const convertBtn = dce("button");
-                convertBtn.innerHTML = "Convert";
-                convertBtn.disabled = true;
-                main.appendChild(convertBtn);
 
                 const cutBox = dce("pre");
                 main.appendChild(cutBox);
@@ -474,22 +453,6 @@
                     await addDownload(trimmedBuf, formatSel.value);
                     outPos.value = "0";
                     redrawOut();
-                    currentFmt = formatSel.value;
-
-                    convertSel.value = formatSel.value;
-                    convertSel.disabled = false;
-                    convertBtn.disabled = false;
-                };
-
-                convertBtn.onclick = async () => {
-                    if (!trimmedBuf) {
-                        alert("No audio to convert.");
-                        return;
-                    }
-                    await addDownload(trimmedBuf, convertSel.value, `${currentFmt}_to.${convertSel.value}`);
-                    outPos.value = "0";
-                    redrawOut();
-                    currentFmt = convertSel.value;
                 };
 
                 function drawWaveform(canvas, buf, baseDuration) {
