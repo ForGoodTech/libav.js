@@ -390,7 +390,17 @@
                 markBtn.onclick = () => toggleCut(audio.currentTime);
 
                 async function addDownload(buf, fmtName, baseName) {
-                    const res = await encodeBuffer(buf, fmtName);
+                    const prog = dce("progress");
+                    prog.value = 0;
+                    prog.max = 1;
+                    prog.style.display = "block";
+                    downloads.appendChild(prog);
+                    let res;
+                    try {
+                        res = await encodeBuffer(buf, fmtName, v => prog.value = v);
+                    } finally {
+                        downloads.removeChild(prog);
+                    }
                     if (!res)
                         return;
                     const {blob, ext} = res;
@@ -512,7 +522,7 @@
                     return out.buffer;
                 }
 
-                async function encodeWithLibAV(libav, buf, fmt) {
+                async function encodeWithLibAV(libav, buf, fmt, progCb) {
                     const sr = buf.sampleRate;
                     const chs = buf.numberOfChannels;
                     const channel_layout = chs === 1 ? 4 : 3;
@@ -644,8 +654,15 @@
                         throw new Error(`Unsupported sample_fmt ${sample_fmt}`);
                     }
                     console.log(`Encoding ${frames.length} frames`);
-                    const packets = await libav.ff_encode_multi(c, frame, pkt, frames, true);
-                    await libav.ff_write_multi(oc, pkt, packets);
+                    const batch = 100;
+                    for (let i = 0; i < frames.length; i += batch) {
+                        const part = frames.slice(i, i + batch);
+                        const pkts = await libav.ff_encode_multi(c, frame, pkt, part, false);
+                        await libav.ff_write_multi(oc, pkt, pkts);
+                        progCb && progCb((i + part.length) / frames.length);
+                    }
+                    const pkts = await libav.ff_encode_multi(c, frame, pkt, [], true);
+                    await libav.ff_write_multi(oc, pkt, pkts);
                     await libav.av_write_trailer(oc);
                     const data = await libav.readFile(`out.${fmt.ext}`);
                     await libav.unlink(`out.${fmt.ext}`);
@@ -654,22 +671,26 @@
                     return data;
                 }
 
-                async function encodeBuffer(buf, fmtName) {
+                async function encodeBuffer(buf, fmtName, progCb) {
+                    progCb && progCb(0);
                     if (fmtName === "wav") {
-                        return {
+                        const out = {
                             blob: new Blob([encodeWAV(buf)], {type: "audio/wav"}),
                             ext: "wav"
                         };
+                        progCb && progCb(1);
+                        return out;
                     } else {
                         const fmt = formatMap[fmtName];
                         let data;
                         try {
-                            data = await encodeWithLibAV(libav, buf, fmt);
+                            data = await encodeWithLibAV(libav, buf, fmt, progCb);
                         } catch (err) {
                             console.error("Encoding failed", err);
                             alert("Encoding failed: " + err);
                             return null;
                         }
+                        progCb && progCb(1);
                         return {
                             blob: new Blob([data.buffer], {type: fmt.mime}),
                             ext: fmt.ext
